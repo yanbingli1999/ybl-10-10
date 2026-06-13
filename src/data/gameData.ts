@@ -1,4 +1,4 @@
-import type { Breed, Herb, Prescription, DiseaseType, Staff } from "@/types/game";
+import type { Breed, Herb, Prescription, DiseaseType, Staff, AncientScroll, HiddenDisease, ImprovedPrescription, Element } from "@/types/game";
 
 export const DISEASE_SYMPTOMS: Record<DiseaseType, string[]> = {
   fever: ["体温偏高", "无精打采", "食欲不振", "鼻子发干", "魔力发热"],
@@ -438,3 +438,285 @@ export const NOTES_FAIL = [
   "只得转往大城市的高级诊所求治。",
   "灵兽对这里产生了阴影，不愿再踏入半步。",
 ];
+
+export const ANCIENT_SCROLLS: AncientScroll[] = [
+  {
+    id: "scroll_fire_1",
+    name: "炎灵秘典·残页一",
+    emoji: "📜",
+    fragmentText: "赤炎焚邪，热病得解",
+    description: "出自上古炎灵族的秘典，记载着与火元素相关的治疗秘术。",
+    rarity: 2,
+    relatedElements: ["fire"],
+    relatedSymptoms: ["体温偏高", "魔力发热", "精神萎靡"],
+  },
+  {
+    id: "scroll_water_1",
+    name: "水神经·残页一",
+    emoji: "📜",
+    fragmentText: "水善利万物，润物细无声",
+    description: "水神共工所传经文，讲述了津液滋补的奥妙。",
+    rarity: 2,
+    relatedElements: ["water"],
+    relatedSymptoms: ["口干舌燥", "尿液深黄", "皮肤弹性差"],
+  },
+  {
+    id: "scroll_wood_1",
+    name: "青囊草木经·残页一",
+    emoji: "📜",
+    fragmentText: "生生不息，木气养骨",
+    description: "神医华佗所著的草木要籍，讲述以木气修补损伤。",
+    rarity: 3,
+    relatedElements: ["wood"],
+    relatedSymptoms: ["肢体肿胀", "行动不便", "无法站立"],
+  },
+  {
+    id: "scroll_thunder_1",
+    name: "雷帝素问·残页一",
+    emoji: "📜",
+    fragmentText: "雷霆万钧，涤荡邪祟",
+    description: "雷部天君所传，以雷元素净化灵脉紊乱之法。",
+    rarity: 3,
+    relatedElements: ["thunder"],
+    relatedSymptoms: ["魔力溢出", "元素暴走", "魔力失控"],
+  },
+  {
+    id: "scroll_earth_1",
+    name: "地母经·残页一",
+    emoji: "📜",
+    fragmentText: "厚德载物，固本培元",
+    description: "地母娘娘所传，讲述土元素稳固根本的法门。",
+    rarity: 2,
+    relatedElements: ["earth"],
+    relatedSymptoms: ["无力", "嗜睡", "反应迟缓"],
+  },
+  {
+    id: "scroll_light_1",
+    name: "光明渡厄经·残页一",
+    emoji: "📜",
+    fragmentText: "圣光普照，邪祟消散",
+    description: "光明神殿的神圣典籍，记载净化诅咒与寄生虫之法。",
+    rarity: 4,
+    relatedElements: ["light"],
+    relatedSymptoms: ["噩梦连连", "阴影缠身", "眼睛发黑", "瘙痒难忍"],
+  },
+  {
+    id: "scroll_dark_1",
+    name: "幽冥药典·残页一",
+    emoji: "📜",
+    fragmentText: "以毒攻毒，以暗治暗",
+    description: "幽冥界的神秘药典，记载着非常人的解毒之法。",
+    rarity: 4,
+    relatedElements: ["dark"],
+    relatedSymptoms: ["呕吐", "腹泻", "瞳孔异常", "口中异味"],
+  },
+  {
+    id: "scroll_wood_2",
+    name: "青囊草木经·残页二",
+    emoji: "📜",
+    fragmentText: "草木有灵，消敏固本",
+    description: "记载着应对过敏症状的草木配伍之法。",
+    rarity: 3,
+    relatedElements: ["wood"],
+    relatedSymptoms: ["皮肤红肿", "不停抓挠", "呼吸急促"],
+  },
+];
+
+export const HIDDEN_DISEASES: HiddenDisease[] = [
+  {
+    id: "hidden_fire_syndrome",
+    diseaseType: "fever",
+    hiddenName: "九阳焚心症",
+    description: "火元素灵兽体内阳气过盛，普通退热无效，需以火攻火方能化解。",
+    requiredSymptoms: ["体温偏高", "魔力发热", "无精打采"],
+    requiredElement: "fire",
+    requiredScrollText: "赤炎焚邪",
+    successBonus: {
+      successRate: 10,
+      revenueMultiplier: 1.5,
+      reputationBonus: 5,
+    },
+  },
+  {
+    id: "hidden_water_depletion",
+    diseaseType: "dehydration",
+    hiddenName: "真水枯竭症",
+    description: "水元素灵兽本源真水耗损，普通补水无效，需用玉泉配合火元素药材激活。",
+    requiredSymptoms: ["口干舌燥", "眼窝凹陷", "严重口渴"],
+    requiredElement: "water",
+    requiredScrollText: "水善利万物",
+    successBonus: {
+      successRate: 12,
+      revenueMultiplier: 1.6,
+      reputationBonus: 6,
+    },
+  },
+  {
+    id: "hidden_bone_spirit",
+    diseaseType: "fracture",
+    hiddenName: "碎髓断骨症",
+    description: "木元素灵兽骨骼精髓受损，普通接骨无法愈合，需木气涵养。",
+    requiredSymptoms: ["肢体肿胀", "触碰尖叫", "无法站立"],
+    requiredElement: "wood",
+    requiredScrollText: "生生不息",
+    successBonus: {
+      successRate: 10,
+      revenueMultiplier: 1.5,
+      reputationBonus: 5,
+    },
+  },
+  {
+    id: "hidden_mana_storm",
+    diseaseType: "mana_disorder",
+    hiddenName: "灵脉风暴症",
+    description: "雷元素灵兽灵脉紊乱如风暴，普通稳脉无效，需以雷制雷。",
+    requiredSymptoms: ["魔力溢出", "元素暴走", "光环混乱"],
+    requiredElement: "thunder",
+    requiredScrollText: "雷霆万钧",
+    successBonus: {
+      successRate: 12,
+      revenueMultiplier: 1.7,
+      reputationBonus: 7,
+    },
+  },
+];
+
+export const IMPROVED_PRESCRIPTIONS: ImprovedPrescription[] = [
+  {
+    id: "improved_curse_breaking",
+    baseDisease: "curse",
+    name: "九转破咒方",
+    herbIds: ["herb_light", "herb_pure", "herb_fire", "herb_energy"],
+    successRate: 90,
+    bonusDescription: "在破咒方基础上加入聚灵果，增强灵力循环，大幅提升治愈率。",
+    requiredElement: "light",
+    requiredScrollText: "圣光普照",
+    requiredSymptoms: ["噩梦连连", "阴影缠身", "眼睛发黑"],
+    bonusEffect: {
+      revenueMultiplier: 1.4,
+      speedBoost: 0.2,
+      satisfactionBonus: 15,
+    },
+  },
+  {
+    id: "improved_poison_antidote",
+    baseDisease: "poisoning",
+    name: "阴阳解毒丹",
+    herbIds: ["herb_antidote", "herb_pure", "herb_water", "herb_light"],
+    successRate: 92,
+    bonusDescription: "以阴阳调和之法，解毒同时净化灵脉，效果远超普通解毒方。",
+    requiredElement: "dark",
+    requiredScrollText: "以毒攻毒",
+    requiredSymptoms: ["呕吐", "腹泻", "瞳孔异常"],
+    bonusEffect: {
+      revenueMultiplier: 1.5,
+      speedBoost: 0.25,
+      satisfactionBonus: 18,
+    },
+  },
+  {
+    id: "improved_allergy_relief",
+    baseDisease: "allergy",
+    name: "草木归元方",
+    herbIds: ["herb_immune", "herb_water", "herb_pure", "herb_wood"],
+    successRate: 94,
+    bonusDescription: "加入生命藤，从根本上改善灵兽体质，消除过敏根源。",
+    requiredElement: "wood",
+    requiredScrollText: "草木有灵",
+    requiredSymptoms: ["皮肤红肿", "不停抓挠", "呼吸急促"],
+    bonusEffect: {
+      revenueMultiplier: 1.4,
+      speedBoost: 0.15,
+      satisfactionBonus: 12,
+    },
+  },
+  {
+    id: "improved_qi_replenish",
+    baseDisease: "fatigue",
+    name: "大补元气汤",
+    herbIds: ["herb_energy", "herb_wood", "herb_light", "herb_immune"],
+    successRate: 96,
+    bonusDescription: "固本培元与补充灵力相结合，恢复效果显著且持久。",
+    requiredElement: "earth",
+    requiredScrollText: "厚德载物",
+    requiredSymptoms: ["无力", "嗜睡", "反应迟缓"],
+    bonusEffect: {
+      revenueMultiplier: 1.3,
+      speedBoost: 0.3,
+      satisfactionBonus: 20,
+    },
+  },
+];
+
+export function getScrollDropChance(severity: string, day: number): number {
+  const baseChance = severity === "critical" ? 0.25 : severity === "severe" ? 0.18 : severity === "moderate" ? 0.12 : 0.06;
+  const dayBonus = Math.min(0.15, day * 0.005);
+  return Math.min(0.4, baseChance + dayBonus);
+}
+
+export function getRandomScroll(element?: Element, symptoms?: string[]): AncientScroll {
+  let candidates = [...ANCIENT_SCROLLS];
+  if (element) {
+    candidates = candidates.filter(s => s.relatedElements.includes(element));
+  }
+  if (symptoms && symptoms.length > 0) {
+    candidates = candidates.filter(s =>
+      s.relatedSymptoms.some(sym => symptoms.includes(sym))
+    );
+  }
+  if (candidates.length === 0) {
+    candidates = [...ANCIENT_SCROLLS];
+  }
+  const weighted: AncientScroll[] = [];
+  candidates.forEach(s => {
+    const weight = (6 - s.rarity) * (6 - s.rarity);
+    for (let i = 0; i < weight; i++) weighted.push(s);
+  });
+  return weighted[Math.floor(Math.random() * weighted.length)];
+}
+
+export function validateResearch(
+  symptoms: string[],
+  herbs: string[],
+  element: Element | null,
+  scroll: AncientScroll | null
+): { valid: boolean; matchType?: "hidden_disease" | "improved_prescription"; matchId?: string; score: number } {
+  if (!element || !scroll) {
+    return { valid: false, score: 0 };
+  }
+
+  let bestScore = 0;
+  let bestMatch: { type: "hidden_disease" | "improved_prescription"; id: string } | null = null;
+
+  for (const hd of HIDDEN_DISEASES) {
+    const symptomMatch = hd.requiredSymptoms.filter(s => symptoms.includes(s)).length;
+    const symptomRatio = symptomMatch / hd.requiredSymptoms.length;
+    const elementMatch = hd.requiredElement === element ? 1 : 0;
+    const textMatch = scroll.fragmentText.includes(hd.requiredScrollText) ? 1 : 0;
+    const herbMatch = herbs.length >= 3 ? 0.2 : 0;
+    const score = (symptomRatio * 0.4 + elementMatch * 0.3 + textMatch * 0.3 + herbMatch) * 100;
+    if (score > bestScore && score >= 70) {
+      bestScore = score;
+      bestMatch = { type: "hidden_disease", id: hd.id };
+    }
+  }
+
+  for (const ip of IMPROVED_PRESCRIPTIONS) {
+    const symptomMatch = ip.requiredSymptoms.filter(s => symptoms.includes(s)).length;
+    const symptomRatio = symptomMatch / ip.requiredSymptoms.length;
+    const elementMatch = ip.requiredElement === element ? 1 : 0;
+    const textMatch = scroll.fragmentText.includes(ip.requiredScrollText) ? 1 : 0;
+    const herbMatch = ip.herbIds.filter(h => herbs.includes(h)).length / ip.herbIds.length;
+    const score = (symptomRatio * 0.3 + elementMatch * 0.25 + textMatch * 0.25 + herbMatch * 0.2) * 100;
+    if (score > bestScore && score >= 70) {
+      bestScore = score;
+      bestMatch = { type: "improved_prescription", id: ip.id };
+    }
+  }
+
+  if (bestMatch) {
+    return { valid: true, matchType: bestMatch.type, matchId: bestMatch.id, score: Math.floor(bestScore) };
+  }
+
+  return { valid: false, score: Math.floor(bestScore) };
+}

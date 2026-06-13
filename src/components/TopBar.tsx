@@ -1,7 +1,7 @@
 import { NavLink } from "react-router-dom";
 import {
   Coins, Star, Calendar, Clock, CloudSun, Play, Pause, Gauge,
-  Hospital, BookOpen, Users, Receipt, RotateCcw,
+  Hospital, BookOpen, Users, Receipt, RotateCcw, FlaskConical, ScrollText,
 } from "lucide-react";
 import { useGameStore } from "@/store/gameStore";
 import { WEATHER_NAMES } from "@/data/gameData";
@@ -22,9 +22,12 @@ export function TopBar() {
   const weather = useGameStore(s => s.weather);
   const isPaused = useGameStore(s => s.isPaused);
   const speed = useGameStore(s => s.speed);
+  const scrollInventory = useGameStore(s => s.scrollInventory);
   const togglePause = useGameStore(s => s.togglePause);
   const setSpeed = useGameStore(s => s.setSpeed);
   const resetGame = useGameStore(s => s.resetGame);
+
+  const totalScrolls = Object.values(scrollInventory).reduce((sum, count) => sum + count, 0);
 
   const hour = Math.floor(currentTime).toString().padStart(2, "0");
   const minute = Math.floor((currentTime % 1) * 60).toString().padStart(2, "0");
@@ -63,6 +66,11 @@ export function TopBar() {
               <CloudSun className="w-4 h-4" />
               <span className="mr-1">{WEATHER_EMOJI[weather]}</span>
               <span className="font-semibold">{WEATHER_NAMES[weather]}</span>
+            </div>
+            <div className="flex items-center gap-1.5 bg-white/10 px-3 py-1.5 rounded-full">
+              <ScrollText className="w-4 h-4 text-clinic-amber" />
+              <span className="font-semibold tabular-nums">{totalScrolls}</span>
+              <span className="text-xs opacity-75">残页</span>
             </div>
           </div>
 
@@ -103,6 +111,7 @@ export function TopBar() {
         <nav className="mt-3 flex flex-wrap gap-1.5 text-sm">
           {[
             { to: "/", label: "诊所", icon: Hospital, end: true },
+            { to: "/research", label: "古籍研究", icon: FlaskConical },
             { to: "/archive", label: "灵兽档案", icon: BookOpen },
             { to: "/staff", label: "员工管理", icon: Users },
             { to: "/finance", label: "财务流水", icon: Receipt },

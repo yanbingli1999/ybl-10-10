@@ -152,3 +152,84 @@ export interface Notification {
   message: string;
   timestamp: number;
 }
+
+export type ResearchStatus = "pending" | "researching" | "completed" | "failed";
+
+export type ResearchResultType = "hidden_disease" | "improved_prescription";
+
+export interface AncientScroll {
+  id: string;
+  name: string;
+  emoji: string;
+  fragmentText: string;
+  description: string;
+  rarity: 1 | 2 | 3 | 4 | 5;
+  relatedElements: Element[];
+  relatedSymptoms: string[];
+}
+
+export interface ResearchProject {
+  id: string;
+  name: string;
+  status: ResearchStatus;
+  progress: number;
+  totalHours: number;
+  selectedSymptoms: string[];
+  selectedHerbs: string[];
+  selectedElement: Element | null;
+  scrollId: string | null;
+  resultType: ResearchResultType | null;
+  resultId: string | null;
+  startedAt: number | null;
+  createdAt: number;
+}
+
+export interface HiddenDisease {
+  id: string;
+  diseaseType: DiseaseType;
+  hiddenName: string;
+  description: string;
+  requiredSymptoms: string[];
+  requiredElement: Element;
+  requiredScrollText: string;
+  successBonus: {
+    successRate: number;
+    revenueMultiplier: number;
+    reputationBonus: number;
+  };
+}
+
+export interface ImprovedPrescription {
+  id: string;
+  baseDisease: DiseaseType;
+  name: string;
+  herbIds: string[];
+  successRate: number;
+  bonusDescription: string;
+  requiredElement: Element;
+  requiredScrollText: string;
+  requiredSymptoms: string[];
+  bonusEffect: {
+    revenueMultiplier: number;
+    speedBoost: number;
+    satisfactionBonus: number;
+  };
+}
+
+export interface RecipeCanonEntry {
+  id: string;
+  name: string;
+  type: "hidden_disease" | "improved_prescription";
+  disease: DiseaseType;
+  description: string;
+  herbIds?: string[];
+  successRate?: number;
+  bonusEffect?: {
+    revenueMultiplier?: number;
+    speedBoost?: number;
+    satisfactionBonus?: number;
+    reputationBonus?: number;
+  };
+  discoveredAt: number;
+  dayDiscovered: number;
+}

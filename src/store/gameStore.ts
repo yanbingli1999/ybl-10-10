@@ -13,6 +13,11 @@ import type {
   WeatherType,
   Prescription,
   TreatmentResult,
+  ResearchProject,
+  RecipeCanonEntry,
+  Element,
+  ResearchResultType,
+  AncientScroll,
 } from "@/types/game";
 import {
   BREEDS,
@@ -26,6 +31,12 @@ import {
   NOTES_SUCCESS,
   NOTES_FAIL,
   DISEASE_NAMES,
+  ANCIENT_SCROLLS,
+  HIDDEN_DISEASES,
+  IMPROVED_PRESCRIPTIONS,
+  getScrollDropChance,
+  getRandomScroll,
+  validateResearch,
 } from "@/data/gameData";
 
 const DISEASE_TYPES: DiseaseType[] = [
@@ -110,6 +121,7 @@ export interface GameState {
   waitingQueue: Beast[];
   beds: Bed[];
   inventory: Record<string, number>;
+  scrollInventory: Record<string, number>;
   staff: Staff[];
   discoveredBreeds: string[];
   medicalRecords: MedicalRecord[];
@@ -119,6 +131,9 @@ export interface GameState {
   selectedBeastId: string | null;
   selectedBedId: string | null;
   lastBeastSpawn: number;
+  researchProjects: ResearchProject[];
+  recipeCanon: RecipeCanonEntry[];
+  researchingStaffId: string | null;
 
   // Actions
   togglePause: () => void;
@@ -136,6 +151,12 @@ export interface GameState {
   _spawnInitialBeasts: () => void;
   _addTransaction: (type: Transaction["type"], category: string, amount: number, description: string) => void;
   _dailySettlement: () => void;
+
+  // Research actions
+  startResearch: (symptoms: string[], herbs: string[], element: Element | null, scrollId: string | null, staffId: string | null) => void;
+  cancelResearch: (projectId: string) => void;
+  collectResearchResult: (projectId: string) => void;
+  _processResearch: () => void;
 }
 
 function createInitialBeds(): Bed[] {
@@ -173,6 +194,7 @@ function buildInitialState() {
     waitingQueue: [] as Beast[],
     beds: createInitialBeds(),
     inventory: createInitialInventory(),
+    scrollInventory: {} as Record<string, number>,
     staff: JSON.parse(JSON.stringify(INITIAL_STAFF)),
     discoveredBreeds: [] as string[],
     medicalRecords: [] as MedicalRecord[],
@@ -182,6 +204,9 @@ function buildInitialState() {
     selectedBeastId: null,
     selectedBedId: null,
     lastBeastSpawn: 8,
+    researchProjects: [] as ResearchProject[],
+    recipeCanon: [] as RecipeCanonEntry[],
+    researchingStaffId: null as string | null,
   };
 }
 
@@ -402,16 +427,26 @@ export const useGameStore = create<GameState>()(
             highestStage: Math.max(nextStage, prevRel?.highestStage ?? 0),
           };
 
+          let scrollDropMsg = "";
+          let newScrollInventory = { ...s.scrollInventory };
+          const scrollChance = getScrollDropChance(beast.severity, s.currentDay);
+          if (Math.random() <= scrollChance) {
+            const droppedScroll = getRandomScroll(breed.element, beast.symptoms);
+            newScrollInventory[droppedScroll.id] = (newScrollInventory[droppedScroll.id] ?? 0) + 1;
+            scrollDropMsg = ` 📜获得「${droppedScroll.name}」残页！`;
+          }
+
           set(st => ({
             money: st.money + revenue,
             reputation: Math.min(100, st.reputation + repGain),
             beastRelationships: { ...st.beastRelationships, [breed.id]: newRel },
             medicalRecords: [record, ...st.medicalRecords],
+            scrollInventory: newScrollInventory,
           }));
           get()._addTransaction("income", "诊金收入", revenue, `治愈 ${breed.name}·${beast.name}${evolved ? "(进化加成)" : ""}`);
           const evolveMsg = evolved ? " 🎉灵兽发生进化！额外获得加成！" : "";
           const diagMsg = diagnosisCorrect ? " 🔍诊断正确！" : "";
-          get().addNotification("success", `治愈成功！获得 ${revenue} 金，声望+${repGain}，亲密度+${trustGain}${diagMsg}${evolveMsg}`);
+          get().addNotification("success", `治愈成功！获得 ${revenue} 金，声望+${repGain}，亲密度+${trustGain}${diagMsg}${evolveMsg}${scrollDropMsg}`);
         } else if (bed.result === "fail" && beast) {
           const penaltyMoney = Math.floor(s.money * 0.05) + 20;
           const penaltyRep = 5;
@@ -558,6 +593,35 @@ export const useGameStore = create<GameState>()(
                 JSON.stringify([...p.herbIds].sort()) === JSON.stringify([...herbs].sort())
               );
               let finalRate = matchedPresc ? matchedPresc.successRate : 30;
+              let revenueMultiplier = 1;
+              let repBonus = 0;
+
+              // 检查改良药方
+              const improvedMatch = IMPROVED_PRESCRIPTIONS.find(p =>
+                JSON.stringify([...p.herbIds].sort()) === JSON.stringify([...herbs].sort()) &&
+                state.recipeCanon.some(c => c.type === "improved_prescription" && c.herbIds && JSON.stringify([...c.herbIds].sort()) === JSON.stringify([...herbs].sort()))
+              );
+              if (improvedMatch) {
+                finalRate = improvedMatch.successRate;
+                revenueMultiplier = improvedMatch.bonusEffect.revenueMultiplier;
+              }
+
+              // 检查隐藏病名匹配
+              if (b.beastSnapshot && b.playerDiagnosis) {
+                const hiddenMatch = state.recipeCanon.find(c =>
+                  c.type === "hidden_disease" &&
+                  c.disease === b.beastSnapshot?.disease &&
+                  b.playerDiagnosis === b.beastSnapshot?.disease
+                );
+                if (hiddenMatch && hiddenMatch.bonusEffect) {
+                  finalRate += hiddenMatch.bonusEffect.reputationBonus || 0;
+                  if (hiddenMatch.bonusEffect.revenueMultiplier) {
+                    revenueMultiplier *= hiddenMatch.bonusEffect.revenueMultiplier;
+                  }
+                  repBonus = hiddenMatch.bonusEffect.reputationBonus || 0;
+                }
+              }
+
               // 员工加成
               if (b.assignedStaffId) {
                 const stf = state.staff.find(x => x.id === b.assignedStaffId);
@@ -589,7 +653,208 @@ export const useGameStore = create<GameState>()(
 
           set(state);
           if (dayPassed) get()._dailySettlement();
+          get()._processResearch();
         }
+      },
+
+      _processResearch: () => {
+        const s = get();
+        const researching = s.researchProjects.find(p => p.status === "researching");
+        if (!researching) return;
+
+        const staffBonus = s.researchingStaffId ? 1.5 : 1;
+        const newProgress = researching.progress + staffBonus;
+        let newStatus = researching.status;
+        let resultType: ResearchResultType | null = researching.resultType;
+        let resultId: string | null = researching.resultId;
+
+        if (newProgress >= researching.totalHours) {
+          const scroll = researching.scrollId ? ANCIENT_SCROLLS.find(sc => sc.id === researching.scrollId) : null;
+          const validation = validateResearch(
+            researching.selectedSymptoms,
+            researching.selectedHerbs,
+            researching.selectedElement,
+            scroll
+          );
+
+          if (validation.valid && validation.matchType && validation.matchId) {
+            newStatus = "completed";
+            resultType = validation.matchType;
+            resultId = validation.matchId;
+
+            let canonEntry: RecipeCanonEntry | null = null;
+            if (validation.matchType === "hidden_disease") {
+              const hd = HIDDEN_DISEASES.find(h => h.id === validation.matchId);
+              if (hd && !s.recipeCanon.some(c => c.type === "hidden_disease" && c.disease === hd.diseaseType)) {
+                canonEntry = {
+                  id: uid("canon"),
+                  name: hd.hiddenName,
+                  type: "hidden_disease",
+                  disease: hd.diseaseType,
+                  description: hd.description,
+                  bonusEffect: {
+                    revenueMultiplier: hd.successBonus.revenueMultiplier,
+                    reputationBonus: hd.successBonus.reputationBonus,
+                  },
+                  discoveredAt: s.currentTime,
+                  dayDiscovered: s.currentDay,
+                };
+              }
+            } else if (validation.matchType === "improved_prescription") {
+              const ip = IMPROVED_PRESCRIPTIONS.find(p => p.id === validation.matchId);
+              if (ip && !s.recipeCanon.some(c => c.type === "improved_prescription" && c.herbIds && JSON.stringify([...c.herbIds].sort()) === JSON.stringify([...ip.herbIds].sort()))) {
+                canonEntry = {
+                  id: uid("canon"),
+                  name: ip.name,
+                  type: "improved_prescription",
+                  disease: ip.baseDisease,
+                  description: ip.bonusDescription,
+                  herbIds: ip.herbIds,
+                  successRate: ip.successRate,
+                  bonusEffect: {
+                    revenueMultiplier: ip.bonusEffect.revenueMultiplier,
+                    speedBoost: ip.bonusEffect.speedBoost,
+                    satisfactionBonus: ip.bonusEffect.satisfactionBonus,
+                  },
+                  discoveredAt: s.currentTime,
+                  dayDiscovered: s.currentDay,
+                };
+              }
+            }
+
+            if (canonEntry) {
+              set(st => ({
+                recipeCanon: [...st.recipeCanon, canonEntry!],
+                reputation: Math.min(100, st.reputation + 10),
+              }));
+              get().addNotification("success", `🎉 研究成功！发现「${canonEntry.name}」已录入药方典籍！声望+10`);
+            } else {
+              set(st => ({
+                reputation: Math.max(0, st.reputation - 2),
+              }));
+              get().addNotification("warning", "研究结果已知，没有新发现。声望-2");
+            }
+          } else {
+            newStatus = "failed";
+            set(st => ({
+              reputation: Math.max(0, st.reputation - 3),
+            }));
+            get().addNotification("error", `研究失败！组合不匹配，匹配度${validation.score}%。声望-3`);
+          }
+        }
+
+        const updatedProjects = s.researchProjects.map(p =>
+          p.id === researching.id
+            ? { ...p, progress: Math.min(newProgress, researching.totalHours), status: newStatus, resultType, resultId }
+            : p
+        );
+
+        const staffToRelease = s.researchingStaffId;
+        const newStaff = s.staff.map(st =>
+          st.id === staffToRelease && (newStatus === "completed" || newStatus === "failed")
+            ? { ...st, status: "idle" as const, assignedBedId: null }
+            : st
+        );
+
+        set({
+          researchProjects: updatedProjects,
+          staff: newStaff,
+          researchingStaffId: (newStatus === "completed" || newStatus === "failed") ? null : s.researchingStaffId,
+        });
+      },
+
+      startResearch: (symptoms, herbs, element, scrollId, staffId) => {
+        const s = get();
+
+        if (s.researchProjects.some(p => p.status === "researching")) {
+          s.addNotification("error", "已有研究项目进行中，请先完成或取消当前研究");
+          return;
+        }
+
+        if (symptoms.length === 0 || herbs.length === 0 || !element || !scrollId) {
+          s.addNotification("error", "请选择症状、药材、元素和古籍残页");
+          return;
+        }
+
+        if ((s.scrollInventory[scrollId] ?? 0) < 1) {
+          s.addNotification("error", "古籍残页数量不足");
+          return;
+        }
+
+        if (staffId) {
+          const st = s.staff.find(x => x.id === staffId);
+          if (!st || st.status !== "idle") {
+            s.addNotification("error", "该护理员当前不可用");
+            return;
+          }
+        }
+
+        const scroll = ANCIENT_SCROLLS.find(sc => sc.id === scrollId);
+        if (!scroll) return;
+
+        const totalHours = 8 + (symptoms.length * 2) + (herbs.length * 2);
+        const staffName = staffId ? s.staff.find(st => st.id === staffId)?.name : "无";
+
+        const newProject: ResearchProject = {
+          id: uid("research"),
+          name: `「${scroll.fragmentText}」研究`,
+          status: "researching",
+          progress: 0,
+          totalHours,
+          selectedSymptoms: symptoms,
+          selectedHerbs: herbs,
+          selectedElement: element,
+          scrollId,
+          resultType: null,
+          resultId: null,
+          startedAt: s.currentTime,
+          createdAt: Date.now(),
+        };
+
+        const newScrollInventory = { ...s.scrollInventory };
+        newScrollInventory[scrollId] = (newScrollInventory[scrollId] ?? 0) - 1;
+
+        const newStaff = s.staff.map(st =>
+          st.id === staffId ? { ...st, status: "working" as const, assignedBedId: null } : st
+        );
+
+        set(st => ({
+          researchProjects: [...st.researchProjects, newProject],
+          scrollInventory: newScrollInventory,
+          staff: newStaff,
+          researchingStaffId: staffId,
+        }));
+
+        get().addNotification("info", `开始研究「${scroll.name}」，预计${totalHours}小时。研究员：${staffName}`);
+      },
+
+      cancelResearch: (projectId) => {
+        const s = get();
+        const project = s.researchProjects.find(p => p.id === projectId);
+        if (!project || project.status !== "researching") return;
+
+        const staffToRelease = s.researchingStaffId;
+        const newStaff = s.staff.map(st =>
+          st.id === staffToRelease ? { ...st, status: "idle" as const, assignedBedId: null } : st
+        );
+
+        set(st => ({
+          researchProjects: st.researchProjects.filter(p => p.id !== projectId),
+          staff: newStaff,
+          researchingStaffId: null,
+        }));
+
+        get().addNotification("warning", `已取消研究「${project.name}」`);
+      },
+
+      collectResearchResult: (projectId) => {
+        const s = get();
+        const project = s.researchProjects.find(p => p.id === projectId);
+        if (!project || (project.status !== "completed" && project.status !== "failed")) return;
+
+        set(st => ({
+          researchProjects: st.researchProjects.filter(p => p.id !== projectId),
+        }));
       },
     }),
     {
