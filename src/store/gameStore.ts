@@ -94,9 +94,11 @@ export function generateRandomBeast(day: number, time: number): Beast {
   };
 }
 
-function calcTreatmentHours(severity: Severity, staffBoost: boolean): number {
+function calcTreatmentHours(severity: Severity, staffBoost: boolean, speedBoost: number = 0): number {
   const base = SEVERITIES.find(s => s.sev === severity)?.hours ?? 8;
-  return staffBoost ? Math.ceil(base * 0.7) : base;
+  const staffMult = staffBoost ? 0.7 : 1;
+  const totalMult = Math.max(0.3, staffMult * (1 - speedBoost));
+  return Math.ceil(base * totalMult);
 }
 
 export function guessDiseaseFromSymptoms(symptoms: string[]): { disease: DiseaseType; matchRate: number }[] {
@@ -314,7 +316,13 @@ export const useGameStore = create<GameState>()(
         const staffSkillBonus = staffId ? (s.staff.find(x => x.id === staffId)?.skillLevel ?? 1) * 5 : 0;
         void staffSkillBonus;
 
-        const totalHours = calcTreatmentHours(beast.severity, hasStaff);
+        const improvedPresc = IMPROVED_PRESCRIPTIONS.find(p =>
+          JSON.stringify([...p.herbIds].sort()) === JSON.stringify([...herbIds].sort()) &&
+          s.recipeCanon.some(c => c.type === "improved_prescription" && c.herbIds && JSON.stringify([...c.herbIds].sort()) === JSON.stringify([...herbIds].sort()))
+        );
+        const speedBoost = improvedPresc?.bonusEffect.speedBoost ?? 0;
+
+        const totalHours = calcTreatmentHours(beast.severity, hasStaff, speedBoost);
 
         const newBeds = s.beds.map(b => b.id === bedId ? {
           ...b,
@@ -353,7 +361,11 @@ export const useGameStore = create<GameState>()(
           selectedBeastId: null,
         }));
         get()._addTransaction("expense", "药材消耗", herbsCost, `${beast.name} 治疗消耗药材`);
-        get().addNotification("info", `${beast.name} 已入住 ${bed.name}，预计${totalHours}小时治疗`);
+        let bonusMsg = "";
+        if (improvedPresc) {
+          bonusMsg = `（改良药方「${improvedPresc.name}」生效，速度+${Math.round(speedBoost * 100)}%）`;
+        }
+        get().addNotification("info", `${beast.name} 已入住 ${bed.name}，预计${totalHours}小时治疗${bonusMsg}`);
       },
 
       collectFromBed: (bedId) => {
@@ -367,20 +379,57 @@ export const useGameStore = create<GameState>()(
         const matchedPresc = PRESCRIPTIONS.find(p =>
           JSON.stringify([...p.herbIds].sort()) === JSON.stringify([...treatmentHerbs].sort())
         );
-        const usedPrescNames = matchedPresc ? matchedPresc.name : "自拟方";
+
+        const improvedPresc = IMPROVED_PRESCRIPTIONS.find(p =>
+          JSON.stringify([...p.herbIds].sort()) === JSON.stringify([...treatmentHerbs].sort()) &&
+          s.recipeCanon.some(c => c.type === "improved_prescription" && c.herbIds && JSON.stringify([...c.herbIds].sort()) === JSON.stringify([...p.herbIds].sort()))
+        );
+
+        const usedPrescNames = improvedPresc ? improvedPresc.name : (matchedPresc ? matchedPresc.name : "自拟方");
         void usedPrescNames;
 
         const breed = BREEDS.find(b => b.id === (beast?.breedId || ""));
 
         if (bed.result === "success" && beast && breed) {
           const severityMult = { mild: 1, moderate: 1.4, severe: 1.8, critical: 2.3 }[beast.severity] || 1;
-          const satMult = beast.satisfaction / 100;
+          let satMult = beast.satisfaction / 100;
           const reputationBonus = s.reputation / 100;
-          const revenue = Math.floor(breed.baseFees * severityMult * (0.8 + 0.4 * satMult) * (1 + reputationBonus * 0.3));
-          let repGain = Math.ceil(3 * severityMult * satMult);
-          const trustGain = Math.ceil(10 * severityMult * satMult);
+
+          let revenueMultiplier = 1;
+          let extraRepGain = 0;
+          let extraSatisfactionBonus = 0;
+          let hiddenDiseaseName: string | null = null;
+          let improvedPrescName: string | null = null;
+
+          if (improvedPresc) {
+            revenueMultiplier *= improvedPresc.bonusEffect.revenueMultiplier;
+            extraSatisfactionBonus += improvedPresc.bonusEffect.satisfactionBonus;
+            improvedPrescName = improvedPresc.name;
+          }
 
           const diagnosisCorrect = bed.playerDiagnosis === beast.disease;
+          if (diagnosisCorrect) {
+            const hiddenDisease = s.recipeCanon.find(c =>
+              c.type === "hidden_disease" && c.disease === beast.disease
+            );
+            if (hiddenDisease && hiddenDisease.bonusEffect) {
+              if (hiddenDisease.bonusEffect.revenueMultiplier) {
+                revenueMultiplier *= hiddenDisease.bonusEffect.revenueMultiplier;
+              }
+              extraRepGain += hiddenDisease.bonusEffect.reputationBonus || 0;
+              hiddenDiseaseName = hiddenDisease.name;
+            }
+          }
+
+          if (extraSatisfactionBonus > 0) {
+            satMult = Math.min(1, satMult + extraSatisfactionBonus / 100);
+          }
+
+          const baseRevenue = Math.floor(breed.baseFees * severityMult * (0.8 + 0.4 * satMult) * (1 + reputationBonus * 0.3));
+          const revenue = Math.floor(baseRevenue * revenueMultiplier);
+          let repGain = Math.ceil(3 * severityMult * satMult) + extraRepGain;
+          const trustGain = Math.ceil(10 * severityMult * satMult);
+
           if (diagnosisCorrect) {
             repGain += 2;
           }
@@ -399,7 +448,13 @@ export const useGameStore = create<GameState>()(
           }
           void newStage;
 
-          const notes = rand(NOTES_SUCCESS);
+          let notes = rand(NOTES_SUCCESS);
+          if (improvedPrescName) {
+            notes = `使用「${improvedPrescName}」疗效显著！${notes}`;
+          }
+          if (hiddenDiseaseName) {
+            notes = `确认为「${hiddenDiseaseName}」。${notes}`;
+          }
           const days = 1;
           const daysToHeal = days;
 
@@ -443,10 +498,12 @@ export const useGameStore = create<GameState>()(
             medicalRecords: [record, ...st.medicalRecords],
             scrollInventory: newScrollInventory,
           }));
-          get()._addTransaction("income", "诊金收入", revenue, `治愈 ${breed.name}·${beast.name}${evolved ? "(进化加成)" : ""}`);
+          get()._addTransaction("income", "诊金收入", revenue, `治愈 ${breed.name}·${beast.name}${evolved ? "(进化加成)" : ""}${improvedPrescName ? `(使用${improvedPrescName})` : ""}${hiddenDiseaseName ? `(确诊${hiddenDiseaseName})` : ""}`);
           const evolveMsg = evolved ? " 🎉灵兽发生进化！额外获得加成！" : "";
           const diagMsg = diagnosisCorrect ? " 🔍诊断正确！" : "";
-          get().addNotification("success", `治愈成功！获得 ${revenue} 金，声望+${repGain}，亲密度+${trustGain}${diagMsg}${evolveMsg}${scrollDropMsg}`);
+          const improvedMsg = improvedPrescName ? ` ✨「${improvedPrescName}」效果拔群！` : "";
+          const hiddenMsg = hiddenDiseaseName ? ` 📖发现「${hiddenDiseaseName}」！` : "";
+          get().addNotification("success", `治愈成功！获得 ${revenue} 金，声望+${repGain}，亲密度+${trustGain}${diagMsg}${improvedMsg}${hiddenMsg}${evolveMsg}${scrollDropMsg}`);
         } else if (bed.result === "fail" && beast) {
           const penaltyMoney = Math.floor(s.money * 0.05) + 20;
           const penaltyRep = 5;

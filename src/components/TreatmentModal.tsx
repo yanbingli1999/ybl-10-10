@@ -1,12 +1,12 @@
 import { useMemo, useState, useEffect } from "react";
-import { X, Stethoscope, Pill, Users, ArrowRight, AlertCircle, Sparkles, Brain, ChevronDown } from "lucide-react";
+import { X, Stethoscope, Pill, Users, ArrowRight, AlertCircle, Sparkles, Brain, ChevronDown, BookOpen, ScrollText } from "lucide-react";
 import { useGameStore, guessDiseaseFromSymptoms } from "@/store/gameStore";
 import {
-  BREEDS, HERBS, PRESCRIPTIONS,
+  BREEDS, HERBS, PRESCRIPTIONS, HIDDEN_DISEASES, IMPROVED_PRESCRIPTIONS,
   SEVERITY_NAMES, SEVERITY_COLORS, DISEASE_NAMES,
   ELEMENT_EMOJI, ELEMENT_NAMES,
 } from "@/data/gameData";
-import type { Bed, DiseaseType } from "@/types/game";
+import type { Bed, DiseaseType, RecipeCanonEntry } from "@/types/game";
 
 interface TreatmentModalProps {
   open: boolean;
@@ -27,12 +27,14 @@ export function TreatmentModal({ open, onClose, targetBed }: TreatmentModalProps
   const queue = useGameStore(s => s.waitingQueue);
   const inventory = useGameStore(s => s.inventory);
   const staff = useGameStore(s => s.staff);
+  const recipeCanon = useGameStore(s => s.recipeCanon);
   const assignBedAndTreat = useGameStore(s => s.assignBedAndTreat);
 
   const [selectedHerbs, setSelectedHerbs] = useState<string[]>([]);
   const [selectedStaff, setSelectedStaff] = useState<string | null>(null);
   const [playerDiagnosis, setPlayerDiagnosis] = useState<DiseaseType | null>(null);
   const [showAllDiseases, setShowAllDiseases] = useState(false);
+  const [maxHerbs, setMaxHerbs] = useState(3);
 
   const beast = useMemo(() => queue.find(b => b.id === selectedBeastId), [queue, selectedBeastId]);
   const breed = beast ? BREEDS.find(b => b.id === beast.breedId) : null;
@@ -56,6 +58,7 @@ export function TreatmentModal({ open, onClose, targetBed }: TreatmentModalProps
       setSelectedStaff(null);
       setPlayerDiagnosis(null);
       setShowAllDiseases(false);
+      setMaxHerbs(3);
     }
   }, [open, selectedBeastId]);
 
@@ -64,16 +67,31 @@ export function TreatmentModal({ open, onClose, targetBed }: TreatmentModalProps
   const toggleHerb = (herbId: string) => {
     setSelectedHerbs(prev => {
       if (prev.includes(herbId)) return prev.filter(id => id !== herbId);
-      if (prev.length >= 3) return prev;
+      if (prev.length >= maxHerbs) return prev;
       if ((inventory[herbId] ?? 0) < 1) return prev;
       return [...prev, herbId];
     });
   };
 
-  const applyPrescription = (presc: { herbIds: string[] }) => {
+  const improvedPrescriptions = useMemo(() => {
+    return IMPROVED_PRESCRIPTIONS.filter(ip =>
+      recipeCanon.some(c => c.type === "improved_prescription" && c.herbIds && JSON.stringify([...c.herbIds].sort()) === JSON.stringify([...ip.herbIds].sort()))
+    );
+  }, [recipeCanon]);
+
+  const discoveredHiddenDiseases = useMemo(() => {
+    return recipeCanon.filter(c => c.type === "hidden_disease");
+  }, [recipeCanon]);
+
+  const applyPrescription = (presc: { herbIds: string[] }, isImproved = false) => {
     const canAfford = presc.herbIds.every(id => (inventory[id] ?? 0) >= 1);
     if (!canAfford) return;
     setSelectedHerbs([...presc.herbIds]);
+    if (isImproved) {
+      setMaxHerbs(presc.herbIds.length);
+    } else {
+      setMaxHerbs(3);
+    }
   };
 
   const selectDiagnosis = (disease: DiseaseType) => {
@@ -164,6 +182,7 @@ export function TreatmentModal({ open, onClose, targetBed }: TreatmentModalProps
                   const label = getMatchLabel(matchRate);
                   const selected = playerDiagnosis === disease;
                   const presc = PRESCRIPTIONS.find(p => p.disease === disease);
+                  const hiddenDisease = discoveredHiddenDiseases.find(h => h.disease === disease);
                   return (
                     <button
                       key={disease}
@@ -173,13 +192,19 @@ export function TreatmentModal({ open, onClose, targetBed }: TreatmentModalProps
                         selected
                           ? "border-clinic-jade bg-clinic-jade/10 shadow-sm"
                           : "border-gray-200 bg-white hover:border-clinic-jade/50 hover:bg-gray-50"
-                      }`}
+                      } ${hiddenDisease ? "ring-1 ring-purple-200" : ""}`}
                     >
                       <div className="flex items-center gap-2">
                         <span className={`text-xs px-1.5 py-0.5 rounded border ${label.color}`}>
                           {label.text}
                         </span>
                         <span className="text-sm font-medium text-clinic-deep">{DISEASE_NAMES[disease]}</span>
+                        {hiddenDisease && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 border border-purple-200 flex items-center gap-0.5">
+                            <BookOpen className="w-3 h-3" />
+                            {hiddenDisease.name}
+                          </span>
+                        )}
                         {selected && <Sparkles className="w-3.5 h-3.5 text-clinic-amber ml-auto" />}
                         <span className="text-[10px] text-gray-400 ml-auto tabular-nums">匹配 {matchRate}%</span>
                       </div>
@@ -193,6 +218,26 @@ export function TreatmentModal({ open, onClose, targetBed }: TreatmentModalProps
                           >
                             一键填入
                           </button>
+                        </div>
+                      )}
+                      {selected && hiddenDisease && (
+                        <div className="mt-2 pt-2 border-t border-purple-200/50 text-[11px] text-purple-700 bg-purple-50/50 rounded p-1.5">
+                          <span className="font-medium">📖 {hiddenDisease.name}：</span>
+                          {hiddenDisease.description}
+                          {hiddenDisease.bonusEffect && (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {hiddenDisease.bonusEffect.revenueMultiplier && (
+                                <span className="text-[10px] px-1 py-0.5 bg-purple-200/50 rounded">
+                                  💰收入×{hiddenDisease.bonusEffect.revenueMultiplier}
+                                </span>
+                              )}
+                              {hiddenDisease.bonusEffect.reputationBonus && (
+                                <span className="text-[10px] px-1 py-0.5 bg-purple-200/50 rounded">
+                                  ⭐声望+{hiddenDisease.bonusEffect.reputationBonus}
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
                       )}
                     </button>
@@ -209,11 +254,52 @@ export function TreatmentModal({ open, onClose, targetBed }: TreatmentModalProps
             </div>
           </div>
 
+          {improvedPrescriptions.length > 0 && (
+            <div className="card p-3 border-purple-200 bg-gradient-to-br from-purple-50 to-pink-50">
+              <div className="font-display text-sm text-clinic-deep flex items-center gap-1.5 mb-2">
+                <ScrollText className="w-4 h-4 text-purple-600" />
+                改良古方
+                <span className="ml-auto text-[10px] text-purple-500">共 {improvedPrescriptions.length} 方</span>
+              </div>
+              <div className="grid grid-cols-1 gap-1.5">
+                {improvedPrescriptions.map(p => {
+                  const canUse = p.herbIds.every(id => (inventory[id] ?? 0) >= 1);
+                  const isSelected = JSON.stringify([...selectedHerbs].sort()) === JSON.stringify([...p.herbIds].sort());
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => canUse && targetBed && applyPrescription(p, true)}
+                      disabled={!canUse || !targetBed}
+                      className={`text-left p-2 rounded-lg border text-xs transition-all ${
+                        isSelected
+                          ? "border-purple-400 bg-purple-100 shadow-sm"
+                          : canUse
+                          ? "border-purple-200 bg-white/80 hover:border-purple-300 hover:bg-purple-50"
+                          : "border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed"
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-medium text-purple-800">{p.name}</span>
+                        <span className="text-[10px] text-purple-500 ml-auto">成功率{p.successRate}%</span>
+                      </div>
+                      <div className="text-[10px] text-gray-500 mt-0.5">
+                        {p.herbIds.map(id => HERBS.find(h => h.id === id)?.emoji).join(" ")}
+                        <span className="ml-1 text-purple-500">
+                          💰×{p.bonusEffect.revenueMultiplier} ⚡+{Math.round(p.bonusEffect.speedBoost * 100)}%
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* 标准药方快速参考 */}
           <div className="card p-3 border-clinic-amber/20">
             <div className="font-display text-sm text-clinic-deep flex items-center gap-1.5 mb-2">
               <Sparkles className="w-4 h-4 text-clinic-amber" />
-              药方典籍
+              常用药方
               <span className="ml-auto text-[10px] text-gray-400">共 {PRESCRIPTIONS.length} 方</span>
             </div>
             <div className="grid grid-cols-2 gap-1.5 max-h-28 overflow-y-auto">
@@ -249,7 +335,7 @@ export function TreatmentModal({ open, onClose, targetBed }: TreatmentModalProps
               <Pill className="w-4 h-4 text-clinic-amber" />
               处方笺 — 选择药材
               <span className="ml-auto text-[11px] text-gray-500">
-                已选 <span className="text-clinic-deep font-semibold">{selectedHerbs.length}</span>/3
+                已选 <span className="text-clinic-deep font-semibold">{selectedHerbs.length}</span>/{maxHerbs}
               </span>
             </div>
 
@@ -257,7 +343,7 @@ export function TreatmentModal({ open, onClose, targetBed }: TreatmentModalProps
               {HERBS.map(h => {
                 const count = inventory[h.id] ?? 0;
                 const selected = selectedHerbs.includes(h.id);
-                const disabled = (!selected && (count < 1 || selectedHerbs.length >= 3)) || !targetBed;
+                const disabled = (!selected && (count < 1 || selectedHerbs.length >= maxHerbs)) || !targetBed;
                 return (
                   <button
                     key={h.id}
